@@ -6,7 +6,7 @@ use tonic::{transport::channel::ClientTlsConfig, Status};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequest, SubscribeRequestFilterTransactions, SubscribeUpdate,
-    SubscribeUpdateTransaction,
+    SubscribeUpdateTransaction, SubscribeRequestFilterBlocksMeta
 };
 
 use crate::common::myerror::AppError;
@@ -136,6 +136,35 @@ impl YellowstoneGrpc {
 
         let subscribe_request = SubscribeRequest {
             transactions,
+            commitment: Some(CommitmentLevel::Processed.into()),
+            ..Default::default()
+        };
+
+        Ok(client.subscribe_with_request(Some(subscribe_request)).await)
+    }
+
+    pub async fn subscribe_confirmed_block(&self) -> Result<
+        GeyserGrpcClientResult<(
+            impl Sink<SubscribeRequest, Error = mpsc::SendError>,
+            impl Stream<Item = Result<SubscribeUpdate, Status>>,
+        )>,
+        AppError,
+    > {
+        if CryptoProvider::get_default().is_none() {
+            default_provider().install_default().unwrap();
+        }
+
+        let mut client = GeyserGrpcClient::build_from_shared(self.endpoint.clone())?
+            .tls_config(ClientTlsConfig::new().with_native_roots())?
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(60))
+            .connect()
+            .await?;
+
+        let mut blocks_meta = HashMap::new();
+        blocks_meta.insert("client".to_string(), SubscribeRequestFilterBlocksMeta {});
+        let subscribe_request = SubscribeRequest {
+            blocks_meta,
             commitment: Some(CommitmentLevel::Processed.into()),
             ..Default::default()
         };

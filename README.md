@@ -9,14 +9,27 @@ Yellowstone gRPC 是获取 Solana 链上数据最快的方式。数据以流的�
 ## subscribe-tx 订阅账户交易
 
 ``` bash
-# cargo test --package yellowstone-grpc-rust --bin yellowstone-grpc-rust -- subscribe_tx::subscribe_tx_tests::test_subscribe_tx --exact --show-output
+cargo test --package yellowstone-grpc-rust --bin yellowstone-grpc-rust -- subscribe_tx::subscribe_tx_tests::test_subscribe_tx --exact --show-output
 ```
 
 ## subscribe-logs 订阅 token 交易，解析Logs会包含池子的最新数据
 
 ``` bash
-# cargo test --package yellowstone-grpc-rust --bin yellowstone-grpc-rust -- subscribe_logs::subscribe_tx_tests --show-output
+cargo test --package yellowstone-grpc-rust --bin yellowstone-grpc-rust -- subscribe_logs::subscribe_logs_tests --show-output
 ```
+
+## subscribe-instructions 订阅交易指令，解析 instructions 中包含的 swap 交易
+
+``` bash
+cargo test --package yellowstone-grpc-rust --bin yellowstone-grpc-rust -- subscribe_logs::subscribe_instructions_tests --show-output
+```
+
+## data-latency 测试数据延迟
+
+```bash
+cargo test --package yellowstone-grpc-rust --bin yellowstone-grpc-rust -- data_latency_tests::test_data_latency --show-output
+```
+
 
 ### PUMP 池子
 

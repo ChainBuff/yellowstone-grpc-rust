@@ -32,7 +32,7 @@ pub struct CompleteEvent {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, BorshDeserialize, BorshSerialize)]
-pub struct SwapBaseInLog {
+pub struct RayV4SwapBaseInLog {
     pub log_type: u8,
     // input
     pub amount_in: u64,
@@ -45,6 +45,12 @@ pub struct SwapBaseInLog {
     pub pool_pc: u64,
     // calc result
     pub out_amount: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, BorshDeserialize, BorshSerialize)]
+pub struct RayCPMMSwapBaseInLog {
+    pub amount_in: u64,
+    pub minimum_amount_out: u64,
 }
 
 pub trait EventTrait: Sized + std::fmt::Debug {
@@ -63,9 +69,15 @@ impl EventTrait for CompleteEvent {
     }
 }
 
-impl EventTrait for SwapBaseInLog {
+impl EventTrait for RayV4SwapBaseInLog {
     fn from_bytes(bytes: &[u8]) -> Result<Self, AppError> {
-        SwapBaseInLog::try_from_slice(bytes).map_err(|e| AppError::from(anyhow!(e.to_string())))
+        RayV4SwapBaseInLog::try_from_slice(bytes).map_err(|e| AppError::from(anyhow!(e.to_string())))
+    }
+}
+
+impl EventTrait for RayCPMMSwapBaseInLog {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, AppError> {
+        RayCPMMSwapBaseInLog::try_from_slice(bytes).map_err(|e| AppError::from(anyhow!(e.to_string())))
     }
 }
 
@@ -75,17 +87,13 @@ pub struct PumpEvent {}
 impl PumpEvent {
     pub fn parse_logs<T: EventTrait + Clone>(logs: &Vec<String>) -> Option<T> {
         let mut event: Option<T> = None;
-        if !logs.is_empty() {
-            let logs_iter = logs.iter().peekable();
+        for l in logs.iter() {
+            if let Some(log) = l.strip_prefix(PROGRAM_DATA) {
+                let borsh_bytes = general_purpose::STANDARD.decode(log).unwrap();
+                let slice: &[u8] = &borsh_bytes[8..];
 
-            for l in logs_iter.rev() {
-                if let Some(log) = l.strip_prefix(PROGRAM_DATA) {
-                    let borsh_bytes = general_purpose::STANDARD.decode(log).unwrap();
-                    let slice: &[u8] = &borsh_bytes[8..];
-
-                    if let Ok(e) = T::from_bytes(slice) {
-                        event = Some(e);
-                    }
+                if let Ok(e) = T::from_bytes(slice) {
+                    event = Some(e);
                 }
             }
         }
@@ -100,19 +108,15 @@ impl RaydiumEvent {
     pub fn parse_logs<T: EventTrait + Clone>(logs: &Vec<String>) -> Option<T> {
         let mut event: Option<T> = None;
 
-        if !logs.is_empty() {
-            let logs_iter = logs.iter().peekable();
+        for l in logs.iter() {
+            let re = Regex::new(r"ray_log: (?P<base64>[A-Za-z0-9+/=]+)").unwrap();
 
-            for l in logs_iter.rev() {
-                let re = Regex::new(r"ray_log: (?P<base64>[A-Za-z0-9+/=]+)").unwrap();
+            if let Some(caps) = re.captures(l) {
+                if let Some(base64) = caps.name("base64") {
+                    let bytes = general_purpose::STANDARD.decode(base64.as_str()).unwrap();
 
-                if let Some(caps) = re.captures(l) {
-                    if let Some(base64) = caps.name("base64") {
-                        let bytes = general_purpose::STANDARD.decode(base64.as_str()).unwrap();
-
-                        if let Ok(e) = T::from_bytes(&bytes) {
-                            event = Some(e);
-                        }
+                    if let Ok(e) = T::from_bytes(&bytes) {
+                        event = Some(e);
                     }
                 }
             }

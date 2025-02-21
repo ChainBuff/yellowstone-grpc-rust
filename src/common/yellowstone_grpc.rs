@@ -6,15 +6,19 @@ use tonic::{transport::channel::ClientTlsConfig, Status};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequest, SubscribeRequestFilterTransactions, SubscribeUpdate,
-    SubscribeUpdateTransaction,
+    SubscribeUpdateTransaction, SubscribeRequestFilterBlocksMeta
 };
 
 use crate::common::myerror::AppError;
+
+use borsh::BorshDeserialize;
 
 type TransactionsFilterMap = HashMap<String, SubscribeRequestFilterTransactions>;
 
 use solana_sdk::signature::Signature;
 use solana_transaction_status::{EncodedTransactionWithStatusMeta, UiTransactionEncoding};
+use yellowstone_grpc_proto::solana::storage::confirmed_block::CompiledInstruction as YellowstoneCompiledInstruction;
+use solana_sdk::pubkey::Pubkey;
 
 #[allow(dead_code)]
 pub struct TransactionPretty {
@@ -22,6 +26,8 @@ pub struct TransactionPretty {
     pub signature: Signature,
     pub is_vote: bool,
     pub tx: EncodedTransactionWithStatusMeta,
+    pub instructions: Vec<YellowstoneCompiledInstruction>,
+    pub account_keys: Vec<String>,
 }
 impl fmt::Debug for TransactionPretty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -38,6 +44,8 @@ impl fmt::Debug for TransactionPretty {
             .field("signature", &self.signature)
             .field("is_vote", &self.is_vote)
             .field("tx", &TxWrap(&self.tx))
+            .field("instructions", &self.instructions)
+            .field("account_keys", &self.account_keys)
             .finish()
     }
 }
@@ -45,6 +53,9 @@ impl fmt::Debug for TransactionPretty {
 impl From<SubscribeUpdateTransaction> for TransactionPretty {
     fn from(SubscribeUpdateTransaction { transaction, slot }: SubscribeUpdateTransaction) -> Self {
         let tx = transaction.expect("should be defined");
+        let message = tx.transaction.clone().unwrap().message;
+        let account_keys = message.clone().and_then(|m| Some(m.account_keys));
+        let instructions = message.clone().unwrap().instructions;
         Self {
             slot,
             signature: Signature::try_from(tx.signature.as_slice()).expect("valid signature"),
@@ -53,6 +64,17 @@ impl From<SubscribeUpdateTransaction> for TransactionPretty {
                 .expect("valid tx with meta")
                 .encode(UiTransactionEncoding::Base64, Some(u8::MAX), true)
                 .expect("failed to encode"),
+            instructions: instructions.iter().map(|i| YellowstoneCompiledInstruction {
+                program_id_index: i.program_id_index,
+                accounts: i.accounts.clone(),
+                data: i.data.clone(),
+            }).collect(),
+            account_keys: match account_keys {
+                Some(keys) => keys.iter()
+                    .map(|key| Pubkey::try_from_slice(&key[..32]).unwrap().to_string())
+                    .collect(),
+                None => vec![],
+            },
         }
     }
 }
@@ -114,6 +136,35 @@ impl YellowstoneGrpc {
 
         let subscribe_request = SubscribeRequest {
             transactions,
+            commitment: Some(CommitmentLevel::Processed.into()),
+            ..Default::default()
+        };
+
+        Ok(client.subscribe_with_request(Some(subscribe_request)).await)
+    }
+
+    pub async fn subscribe_confirmed_block(&self) -> Result<
+        GeyserGrpcClientResult<(
+            impl Sink<SubscribeRequest, Error = mpsc::SendError>,
+            impl Stream<Item = Result<SubscribeUpdate, Status>>,
+        )>,
+        AppError,
+    > {
+        if CryptoProvider::get_default().is_none() {
+            default_provider().install_default().unwrap();
+        }
+
+        let mut client = GeyserGrpcClient::build_from_shared(self.endpoint.clone())?
+            .tls_config(ClientTlsConfig::new().with_native_roots())?
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(60))
+            .connect()
+            .await?;
+
+        let mut blocks_meta = HashMap::new();
+        blocks_meta.insert("client".to_string(), SubscribeRequestFilterBlocksMeta {});
+        let subscribe_request = SubscribeRequest {
+            blocks_meta,
             commitment: Some(CommitmentLevel::Processed.into()),
             ..Default::default()
         };

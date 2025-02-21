@@ -1,7 +1,7 @@
 #[cfg(test)]
-mod subscribe_tx_tests {
+mod subscribe_logs_tests {
     use crate::common::{
-        event::{PumpEvent, RaydiumEvent, SwapBaseInLog, TradeEvent},
+        event::{PumpEvent, RaydiumEvent, RayV4SwapBaseInLog, TradeEvent},
         myerror::AppError,
         yellowstone_grpc::{TransactionPretty, YellowstoneGrpc},
     };
@@ -28,7 +28,7 @@ mod subscribe_tx_tests {
     }
 
     #[test]
-    async fn test_subscribe_tx() -> Result<(), AppError> {
+    async fn test_subscribe_logs() -> Result<(), AppError> {
         dotenv().ok();
         pretty_env_logger::init_custom_env("RUST_LOG");
         let yellowstone_url = env::var("YELLOWSTONE_URL")?;
@@ -88,16 +88,16 @@ mod subscribe_tx_tests {
                 continue;
             }
 
-            let logs = if let OptionSerializer::Some(logs) = &meta.log_messages {
-                logs
-            } else {
-                &vec![]
+            let logs = match &meta.log_messages {
+                OptionSerializer::Some(logs) => logs,
+                OptionSerializer::None => &vec![],
+                OptionSerializer::Skip => &vec![],
             };
 
             if let Ok(swap_type) = get_swap_type(&trade_raw) {
                 match swap_type {
                     SwapType::Raydium => {
-                        let event = RaydiumEvent::parse_logs::<SwapBaseInLog>(logs);
+                        let event = RaydiumEvent::parse_logs::<RayV4SwapBaseInLog>(logs);
                         info!("RaydiumEvent {:#?}", event);
                     }
                     SwapType::Pump => {

@@ -14,14 +14,16 @@ use crate::common::myerror::AppError;
 type TransactionsFilterMap = HashMap<String, SubscribeRequestFilterTransactions>;
 
 use solana_sdk::signature::Signature;
-use solana_transaction_status::{EncodedTransactionWithStatusMeta, UiTransactionEncoding};
+use solana_transaction_status::{
+    EncodedTransactionWithStatusMeta, TransactionWithStatusMeta, UiTransactionEncoding,
+};
 
 #[allow(dead_code)]
 pub struct TransactionPretty {
     pub slot: u64,
     pub signature: Signature,
     pub is_vote: bool,
-    pub tx: EncodedTransactionWithStatusMeta,
+    pub tx: TransactionWithStatusMeta,
 }
 impl fmt::Debug for TransactionPretty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -37,7 +39,16 @@ impl fmt::Debug for TransactionPretty {
             .field("slot", &self.slot)
             .field("signature", &self.signature)
             .field("is_vote", &self.is_vote)
-            .field("tx", &TxWrap(&self.tx))
+            .field(
+                "tx",
+                &TxWrap(
+                    &self
+                        .tx
+                        .clone()
+                        .encode(UiTransactionEncoding::Base64, Some(u8::MAX), true)
+                        .expect("failed to encode"),
+                ),
+            )
             .finish()
     }
 }
@@ -50,9 +61,7 @@ impl From<SubscribeUpdateTransaction> for TransactionPretty {
             signature: Signature::try_from(tx.signature.as_slice()).expect("valid signature"),
             is_vote: tx.is_vote,
             tx: yellowstone_grpc_proto::convert_from::create_tx_with_meta(tx)
-                .expect("valid tx with meta")
-                .encode(UiTransactionEncoding::Base64, Some(u8::MAX), true)
-                .expect("failed to encode"),
+                .expect("valid tx with meta"),
         }
     }
 }

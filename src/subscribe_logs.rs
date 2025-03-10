@@ -10,10 +10,11 @@ mod subscribe_tx_tests {
     use dotenvy::dotenv;
     use futures::{channel::mpsc, sink::SinkExt, stream::StreamExt};
     use log::{error, info};
-    use solana_sdk::pubkey;
     use solana_sdk::pubkey::Pubkey;
+    use solana_sdk::{message::AccountKeys, pubkey};
     use solana_transaction_status::{
         option_serializer::OptionSerializer, EncodedTransactionWithStatusMeta,
+        TransactionStatusMeta,
     };
     use std::env;
     use tokio::test;
@@ -37,7 +38,7 @@ mod subscribe_tx_tests {
         let yellowstone_grpc = YellowstoneGrpc::new(yellowstone_url);
 
         let addrs = vec![
-            "Aa4QWNkS3RLUv7DA9BM1a2Hzm4HDQo5PyRefqDJnpump".to_string(),
+            "6FbZc1RWKuKpv8CrBkCRF7CdVmpCs3oF9uqUWLgapump".to_string(),
             "BnDssYyGDF9aj5j2N5BwsJFk9YMneQ8P7LQkoYkrpump".to_string(),
         ];
         let transactions = yellowstone_grpc.subscribe_transaction(addrs, vec![], vec![]);
@@ -82,19 +83,18 @@ mod subscribe_tx_tests {
         });
 
         while let Some(transaction_pretty) = rx.next().await {
-            let trade_raw = transaction_pretty.tx.clone();
-            let meta = &trade_raw.meta.clone().unwrap();
-            if meta.err.is_some() {
-                continue;
-            }
+            let trade_raw = transaction_pretty.tx;
 
-            let logs = if let OptionSerializer::Some(logs) = &meta.log_messages {
-                logs
-            } else {
-                &vec![]
+            let meta = match trade_raw.get_status_meta() {
+                Some(meta) => meta,
+                None => continue,
             };
 
-            if let Ok(swap_type) = get_swap_type(&trade_raw) {
+            let logs = match &meta.log_messages {
+                Some(logs) => logs,
+                None => continue,
+            };
+            if let Ok(swap_type) = get_swap_type(trade_raw.account_keys()) {
                 match swap_type {
                     SwapType::Raydium => {
                         let event = RaydiumEvent::parse_logs::<SwapBaseInLog>(logs);
@@ -111,26 +111,18 @@ mod subscribe_tx_tests {
     }
 
     #[allow(dead_code)]
-    pub fn get_swap_type(
-        trade_raw: &EncodedTransactionWithStatusMeta,
-    ) -> Result<SwapType, AppError> {
-        let transaction = &trade_raw.transaction.decode();
-        if let Some(transaction) = transaction {
-            let account_keys = transaction.message.static_account_keys();
+    pub fn get_swap_type(account_keys: AccountKeys<'_>) -> Result<SwapType, AppError> {
+        let program_index = account_keys
+            .iter()
+            .position(|item| item == &AMM_V4 || item == &PUMP_PROGRAM_ID)
+            .ok_or(anyhow!("swap type program_id not found"))?;
 
-            let program_index = account_keys
-                .iter()
-                .position(|item| item == &AMM_V4 || item == &PUMP_PROGRAM_ID)
-                .ok_or(anyhow!("swap type program_id not found"))?;
+        let program_id = account_keys[program_index];
 
-            let program_id = account_keys[program_index];
-            let _type = match program_id {
-                AMM_V4 => Ok(SwapType::Raydium),
-                PUMP_PROGRAM_ID => Ok(SwapType::Pump),
-                _ => Err(AppError::from(anyhow!("program_id ix not found"))),
-            };
-            return _type;
+        match program_id {
+            AMM_V4 => Ok(SwapType::Raydium),
+            PUMP_PROGRAM_ID => Ok(SwapType::Pump),
+            _ => Err(AppError::from(anyhow!("program_id ix not found"))),
         }
-        Err(AppError::from(anyhow!("program_id ix not found")))
     }
 }

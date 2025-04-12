@@ -1,0 +1,15 @@
+[package]
+name = "transactions"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+grpc-client = { path = "../../grpc-client" }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio-stream = { workspace = true }
+futures-util = { workspace = true }
+dotenvy = { workspace = true }
+pretty_env_logger = { workspace = true }
+log = { workspace = true }
+yellowstone-grpc-proto = { workspace = true }
+chrono = { workspace = true }

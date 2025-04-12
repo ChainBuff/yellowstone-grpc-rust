@@ -1,0 +1,13 @@
+[package]
+name = "grpc-client"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+anyhow = { workspace = true }
+solana-sdk = { workspace = true }
+solana-transaction-status = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "fs"] }
+yellowstone-grpc-client = { workspace = true }
+yellowstone-grpc-proto = { workspace = true, features = ["plugin"] }
